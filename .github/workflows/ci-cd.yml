@@ -1,0 +1,87 @@
+name: CI-CD BankSampah Kampus
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------- CI: test tiap service ----------
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth, setoran, reward, laporan]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: SKIP_DB_INIT=1 python -m pytest -v
+
+  # ---------- CI: build image & push ke GitHub Container Registry ----------
+  build-push:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [auth, setoran, reward, laporan, frontend, nginx]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nama owner huruf kecil
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tentukan nama image
+        run: |
+          NAME=${{ matrix.service }}
+          [ "$NAME" = "nginx" ] && NAME=gateway
+          echo "IMAGE=ghcr.io/$OWNER/$NAME" >> $GITHUB_ENV
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+  # ---------- CD: deploy otomatis ke server lewat SSH ----------
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nama owner huruf kecil
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+      - name: Kirim docker-compose.yml ke server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: docker-compose.yml
+          target: ~/banksampah
+      - name: Pull image terbaru & jalankan ulang
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ~/banksampah
+            export REGISTRY=ghcr.io/${{ env.OWNER }}
+            docker compose pull
+            docker compose up -d --no-build
+            docker image prune -f

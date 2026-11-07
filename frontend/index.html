@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BankSampah Kampus</title>
+<style>
+:root{--bg:#eaf1ee;--ink:#10302a;--mute:#5d7770;--line:#cddbd5;--card:#fff;--brand:#0c6b5f;--brand2:#0a574d;
+--bis:#d99a00;--inf:#2f59e6;--bad:#b3261e;--ok:#0c6b5f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif}
+h1,h2,h3{margin:0 0 .5rem;line-height:1.2;letter-spacing:-.01em}
+h1{font-size:2rem}h2{font-size:1.35rem}h3{font-size:1.05rem}
+button,input,select{font:inherit}
+.wrap{max-width:980px;margin:0 auto;padding:1rem}
+header{background:var(--ink);color:#fff}
+header .wrap{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header b{font-size:1.15rem;margin-right:auto}
+header span{opacity:.8;font-size:.9rem}
+nav{display:flex;gap:.25rem;overflow-x:auto;padding:.6rem 0}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:.5rem .9rem;cursor:pointer;color:var(--mute);white-space:nowrap}
+nav button.on{color:var(--brand);border-color:var(--brand);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem;margin-bottom:1rem}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+label{display:block;font-size:.9rem;margin:.6rem 0 .2rem;color:var(--mute)}
+input,select{width:100%;padding:.6rem .7rem;border:1px solid var(--line);border-radius:6px;background:#fff}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:3px solid #7bc4b9;outline-offset:1px}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:6px;padding:.6rem 1.1rem;cursor:pointer;font-weight:600;margin-top:.8rem}
+.btn:hover{background:var(--brand2)}.btn.sm{padding:.35rem .7rem;margin:0}
+.btn.ghost{background:none;color:#fff;border:1px solid #fff5;margin:0;padding:.35rem .8rem}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:.55rem .5rem;border-bottom:1px solid var(--line);font-size:.93rem}
+th{color:var(--mute);font-weight:600}
+.big{font-size:2.8rem;font-weight:700;color:var(--brand);line-height:1}
+.mute{color:var(--mute);font-size:.9rem}
+.tag{display:inline-block;padding:.1rem .55rem;border-radius:99px;font-size:.8rem;background:#e4efec}
+.tag.ok{background:#d3efe6;color:var(--ok)}.tag.wait{background:#fdf0cc;color:#7a5600}
+.bar{height:34px;border-radius:6px;color:#fff;display:flex;align-items:center;padding:0 .7rem;font-weight:600;min-width:90px;transition:width .6s}
+.bar.Bisnis{background:var(--bis)}.bar.Informatika{background:var(--inf)}
+.row{display:flex;gap:.6rem;align-items:center}.row>*{flex:1}.row>.btn{flex:0 0 auto}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.4rem}
+.dot.Bisnis{background:var(--bis)}.dot.Informatika{background:var(--inf)}
+#toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);background:var(--ink);color:#fff;padding:.7rem 1.2rem;border-radius:8px;display:none;max-width:90%;z-index:9}
+#toast.err{background:var(--bad)}
+.login{max-width:430px;margin:3rem auto}
+.tabs{display:flex;gap:.5rem;margin-bottom:.5rem}.tabs button{flex:1;padding:.5rem;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer}
+.tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.scroll{overflow-x:auto}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S = { token: localStorage.getItem('t'), user: JSON.parse(localStorage.getItem('u') || 'null'), tab: null, mode: 'login' };
+
+async function api(path, o = {}) {
+  const r = await fetch('/api/' + path, {
+    method: o.method || 'GET',
+    headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: 'Bearer ' + S.token } : {}) },
+    body: o.body ? JSON.stringify(o.body) : undefined
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401 && S.token) { logout(); }
+  if (!r.ok) throw new Error(d.error || 'Terjadi kesalahan, coba lagi');
+  return d;
+}
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 3500);
+}
+const aksi = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+
+function logout() { localStorage.clear(); S = { token: null, user: null, tab: null, mode: 'login' }; render(); }
+function pilihTab(t) { S.tab = t; render(); }
+
+/* ---------- login / daftar ---------- */
+function authView() {
+  const daftar = S.mode === 'register';
+  $('#app').innerHTML = `
+  <div class="wrap login"><div class="card">
+    <h1>BankSampah Kampus</h1>
+    <p class="mute">Setor sampah, kumpulkan poin, tukar hadiah. Bisnis melawan Informatika.</p>
+    <div class="tabs">
+      <button class="${daftar ? '' : 'on'}" onclick="S.mode='login';authView()">Masuk</button>
+      <button class="${daftar ? 'on' : ''}" onclick="S.mode='register';authView()">Daftar mahasiswa</button>
+    </div>
+    <label for="nim">NIM</label><input id="nim" autocomplete="username">
+    ${daftar ? `<label for="nama">Nama lengkap</label><input id="nama">
+      <label for="fak">Fakultas</label><select id="fak"><option>Bisnis</option><option>Informatika</option></select>` : ''}
+    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+    <button class="btn" onclick="kirimAuth()">${daftar ? 'Buat akun' : 'Masuk'}</button>
+    ${daftar ? '' : '<p class="mute">Akun petugas: petugas01 / petugas123</p>'}
+  </div></div>`;
+}
+window.kirimAuth = aksi(async () => {
+  const daftar = S.mode === 'register';
+  const body = { nim: $('#nim').value, password: $('#pw').value };
+  if (daftar) { body.nama = $('#nama').value; body.fakultas = $('#fak').value; }
+  const d = await api('auth/' + (daftar ? 'register' : 'login'), { method: 'POST', body });
+  S.token = d.token; S.user = d.user; S.tab = null;
+  localStorage.setItem('t', d.token); localStorage.setItem('u', JSON.stringify(d.user));
+  render();
+});
+
+/* ---------- kerangka ---------- */
+const TABS = {
+  warga: [['home', 'Beranda'], ['setor', 'Setor sampah'], ['riwayat', 'Riwayat setoran'], ['hadiah', 'Tukar hadiah'], ['rank', 'Peringkat']],
+  petugas: [['verif', 'Verifikasi setoran'], ['tarif', 'Tarif poin'], ['rekap', 'Rekap'], ['rank', 'Peringkat']]
+};
+async function render() {
+  if (!S.user) return authView();
+  const tabs = TABS[S.user.role];
+  if (!S.tab) S.tab = tabs[0][0];
+  $('#app').innerHTML = `
+  <header><div class="wrap"><b>BankSampah Kampus</b>
+    <span>${esc(S.user.nama)} (${S.user.role === 'petugas' ? 'Petugas' : esc(S.user.fakultas)})</span>
+    <button class="btn ghost" onclick="logout()">Keluar</button></div></header>
+  <div class="wrap"><nav>${tabs.map(([k, n]) => `<button class="${S.tab === k ? 'on' : ''}" onclick="pilihTab('${k}')">${n}</button>`).join('')}</nav>
+  <main id="view"><p class="mute">Memuat...</p></main></div>`;
+  try { await VIEWS[S.tab](); } catch (e) { $('#view').innerHTML = `<div class="card">${esc(e.message)}</div>`; }
+}
+
+function fakultasBars(f) {
+  const max = Math.max(...f.map(x => x.poin), 1);
+  return f.map(x => `<div style="margin:.6rem 0"><div class="row" style="margin-bottom:.2rem">
+    <span><i class="dot ${x.fakultas}"></i>Fakultas ${x.fakultas}</span>
+    <span class="mute" style="text-align:right">${x.peserta} peserta, ${x.kg} kg</span></div>
+    <div class="bar ${x.fakultas}" style="width:${Math.max(x.poin / max * 100, 18)}%">${x.poin} poin</div></div>`).join('');
+}
+
+/* ---------- tampilan ---------- */
+const VIEWS = {
+  async home() {
+    const [s, f] = await Promise.all([api('reward/saldo'), api('laporan/fakultas')]);
+    $('#view').innerHTML = `<div class="grid">
+      <div class="card"><h3>Saldo poin kamu</h3><div class="big">${s.saldo}</div>
+        <p class="mute">Total didapat ${s.total_didapat}, sudah dipakai ${s.total_dipakai}</p></div>
+      <div class="card"><h3>Kartu anggota</h3><div id="qr"></div><p class="mute">NIM ${esc(S.user.nim)}. Tunjukkan ke petugas saat menyetor.</p></div></div>
+      <div class="card"><h2>Adu fakultas</h2>${fakultasBars(f)}</div>`;
+    if (window.QRCode) new QRCode($('#qr'), { text: S.user.nim, width: 120, height: 120 });
+    else $('#qr').innerHTML = '<p class="mute">(QR butuh internet)</p>';
+  },
+  async setor() {
+    const t = await api('setoran/tarif');
+    $('#view').innerHTML = `<div class="card"><h2>Ajukan setoran</h2>
+      <p class="mute">Isi perkiraan berat, lalu antar sampah ke titik bank sampah. Petugas akan menimbang dan memverifikasi.</p>
+      <label for="jenis">Jenis sampah</label>
+      <select id="jenis">${t.map(x => `<option value="${x.id}">${esc(x.jenis)} (${x.poin_per_kg} poin/kg)</option>`).join('')}</select>
+      <label for="berat">Perkiraan berat (kg)</label><input id="berat" type="number" min="0.1" step="0.1" value="1">
+      <button class="btn" onclick="ajukan()">Ajukan setoran</button></div>`;
+  },
+  async riwayat() {
+    const r = await api('setoran/saya');
+    $('#view').innerHTML = `<div class="card scroll"><h2>Riwayat setoran</h2>${r.length ? `<table>
+      <tr><th>Tanggal</th><th>Jenis</th><th>Berat</th><th>Poin</th><th>Status</th></tr>
+      ${r.map(x => `<tr><td>${x.tanggal}</td><td>${esc(x.jenis)}</td>
+      <td>${x.status === 'terverifikasi' ? x.berat_kg + ' kg' : '~' + x.berat_est + ' kg'}</td><td>${x.poin}</td>
+      <td><span class="tag ${x.status === 'terverifikasi' ? 'ok' : 'wait'}">${x.status === 'terverifikasi' ? 'Terverifikasi' : 'Menunggu petugas'}</span></td></tr>`).join('')}
+      </table>` : '<p class="mute">Belum ada setoran. Buka menu Setor sampah untuk mulai.</p>'}</div>`;
+  },
+  async hadiah() {
+    const [s, h, r] = await Promise.all([api('reward/saldo'), api('reward/hadiah'), api('reward/riwayat')]);
+    $('#view').innerHTML = `<div class="card"><h3>Saldo poin</h3><div class="big">${s.saldo}</div></div>
+      <div class="grid">${h.map(x => `<div class="card"><h3>${esc(x.nama)}</h3>
+        <p><b>${x.biaya_poin}</b> poin<br><span class="mute">Stok ${x.stok}</span></p>
+        <button class="btn sm" ${x.stok <= 0 || s.saldo < x.biaya_poin ? 'disabled style="opacity:.5"' : ''} onclick="tukar(${x.id})">Tukar sekarang</button></div>`).join('')}</div>
+      <div class="card scroll"><h2>Riwayat penukaran</h2>${r.length ? `<table><tr><th>Tanggal</th><th>Hadiah</th><th>Poin</th></tr>
+      ${r.map(x => `<tr><td>${x.tanggal}</td><td>${esc(x.hadiah_nama)}</td><td>-${x.poin}</td></tr>`).join('')}</table>` : '<p class="mute">Belum ada penukaran.</p>'}</div>`;
+  },
+  async rank() {
+    const [l, f] = await Promise.all([api('laporan/leaderboard'), api('laporan/fakultas')]);
+    $('#view').innerHTML = `<div class="card"><h2>Adu fakultas</h2>${fakultasBars(f)}</div>
+      <div class="card scroll"><h2>10 penyetor teratas</h2>${l.length ? `<table><tr><th>#</th><th>Nama</th><th>Fakultas</th><th>Sampah</th><th>Poin</th></tr>
+      ${l.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.nama)}</td><td><i class="dot ${x.fakultas}"></i>${x.fakultas}</td><td>${x.kg} kg</td><td><b>${x.poin}</b></td></tr>`).join('')}</table>`
+        : '<p class="mute">Belum ada setoran terverifikasi.</p>'}</div>`;
+  },
+  async verif() {
+    const m = await api('setoran/menunggu');
+    window._menunggu = m;
+    $('#view').innerHTML = `<div class="card"><h2>Setoran menunggu verifikasi</h2>
+      <label for="cari">Cari NIM atau nama (atau isi dari hasil scan QR)</label><input id="cari" oninput="isiVerif()">
+      <div class="scroll" id="daftar"></div></div>`;
+    isiVerif();
+  },
+  async tarif() {
+    const t = await api('setoran/tarif');
+    $('#view').innerHTML = `<div class="card scroll"><h2>Tarif poin per kg</h2><table><tr><th>Jenis</th><th>Poin/kg</th><th></th></tr>
+      ${t.map(x => `<tr><td>${esc(x.jenis)}</td><td><input id="t${x.id}" type="number" min="1" value="${x.poin_per_kg}" style="width:110px"></td>
+      <td><button class="btn sm" onclick="simpanTarif(${x.id})">Simpan</button></td></tr>`).join('')}</table></div>`;
+  },
+  async rekap() {
+    const r = await api('laporan/rekap');
+    const max = Math.max(...r.per_jenis.map(x => x.kg), 1);
+    $('#view').innerHTML = `<div class="grid">
+      <div class="card"><h3>Total sampah</h3><div class="big">${r.total_kg}<small style="font-size:1rem"> kg</small></div></div>
+      <div class="card"><h3>Poin dibagikan</h3><div class="big">${r.total_poin}</div></div>
+      <div class="card"><h3>Jumlah setoran</h3><div class="big">${r.jumlah_setoran}</div></div></div>
+      <div class="card"><h2>Per jenis sampah</h2>${r.per_jenis.map(x => `<div style="margin:.5rem 0"><span>${esc(x.jenis)}</span>
+        <div class="bar" style="background:var(--brand);width:${Math.max(x.kg / max * 100, 15)}%">${x.kg} kg</div></div>`).join('') || '<p class="mute">Belum ada data.</p>'}</div>
+      <div class="card scroll"><h2>Per bulan</h2><table><tr><th>Bulan</th><th>Berat</th></tr>
+      ${r.per_bulan.map(x => `<tr><td>${x.bulan}</td><td>${x.kg} kg</td></tr>`).join('') || '<tr><td colspan="2" class="mute">Belum ada data.</td></tr>'}</table></div>`;
+  }
+};
+
+/* ---------- aksi ---------- */
+window.ajukan = aksi(async () => {
+  await api('setoran/ajukan', { method: 'POST', body: { tarif_id: +$('#jenis').value, berat_est: +$('#berat').value } });
+  toast('Setoran diajukan. Antar sampah ke titik bank sampah ya.'); pilihTab('riwayat');
+});
+window.tukar = aksi(async id => {
+  const d = await api('reward/tukar', { method: 'POST', body: { hadiah_id: id } });
+  toast('Penukaran berhasil. Sisa poin ' + d.sisa); render();
+});
+window.isiVerif = () => {
+  const q = ($('#cari').value || '').toLowerCase();
+  const m = window._menunggu.filter(x => (x.user_nim + ' ' + x.user_nama).toLowerCase().includes(q));
+  $('#daftar').innerHTML = m.length ? `<table><tr><th>Mahasiswa</th><th>Jenis</th><th>Perkiraan</th><th>Berat timbang (kg)</th><th></th></tr>
+    ${m.map(x => `<tr><td>${esc(x.user_nama)}<br><span class="mute">${esc(x.user_nim)}, ${x.fakultas}</span></td><td>${esc(x.jenis)}</td><td>${x.berat_est} kg</td>
+    <td><input id="b${x.id}" type="number" min="0.1" step="0.1" value="${x.berat_est}" style="width:100px"></td>
+    <td><button class="btn sm" onclick="verifikasi(${x.id})">Verifikasi</button></td></tr>`).join('')}</table>`
+    : '<p class="mute">Tidak ada setoran yang menunggu.</p>';
+};
+window.verifikasi = aksi(async id => {
+  const d = await api('setoran/verifikasi/' + id, { method: 'POST', body: { berat_kg: +$('#b' + id).value } });
+  toast('Terverifikasi. Mahasiswa mendapat ' + d.poin + ' poin.'); render();
+});
+window.simpanTarif = aksi(async id => {
+  await api('setoran/tarif/' + id, { method: 'PUT', body: { poin_per_kg: +$('#t' + id).value } });
+  toast('Tarif disimpan');
+});
+render();
+</script>
+</body>
+</html>
