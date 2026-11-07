@@ -1,0 +1,70 @@
+x-app-env: &app-env
+  DATABASE_URL: postgresql://bank:bank@db:5432/banksampah
+  JWT_SECRET: ${JWT_SECRET:-ganti-rahasia-ini-di-produksi}
+  INTERNAL_KEY: ${INTERNAL_KEY:-ganti-kunci-internal-ini}
+  SETORAN_URL: http://setoran:5000
+
+x-wait-db: &wait-db
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bank
+      POSTGRES_PASSWORD: bank
+      POSTGRES_DB: banksampah
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bank -d banksampah"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  auth:
+    build: ./auth
+    image: ${REGISTRY:-banksampah}/auth:latest
+    environment: *app-env
+    <<: *wait-db
+    restart: unless-stopped
+
+  setoran:
+    build: ./setoran
+    image: ${REGISTRY:-banksampah}/setoran:latest
+    environment: *app-env
+    <<: *wait-db
+    restart: unless-stopped
+
+  reward:
+    build: ./reward
+    image: ${REGISTRY:-banksampah}/reward:latest
+    environment: *app-env
+    <<: *wait-db
+    restart: unless-stopped
+
+  laporan:
+    build: ./laporan
+    image: ${REGISTRY:-banksampah}/laporan:latest
+    environment: *app-env
+    <<: *wait-db
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: ${REGISTRY:-banksampah}/frontend:latest
+    restart: unless-stopped
+
+  gateway:
+    build: ./nginx
+    image: ${REGISTRY:-banksampah}/gateway:latest
+    ports:
+      - "8080:80"
+    depends_on: [auth, setoran, reward, laporan, frontend]
+    restart: unless-stopped
+
+volumes:
+  dbdata:
